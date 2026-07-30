@@ -7,3 +7,15 @@ __pycache__/
 *.log
 # اگر نمی‌خواهی تنظیمات روتینگت فعلاً عمومی شود:
 # ahura_router.json
+
+.venv/
+.venv-wsl/
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.env
+.env.*
+.ahura/
+

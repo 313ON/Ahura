@@ -8,6 +8,9 @@ version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = ["rich>=13.9,<16"]
 
+[project.scripts]
+ahura = "ahura.ui.cli:main"
+
 [tool.setuptools]
 include-package-data = false
 
