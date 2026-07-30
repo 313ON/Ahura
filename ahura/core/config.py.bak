@@ -59,16 +59,3 @@ def load_config() -> AhuraConfig:
         max_tokens=max_tokens,
         temperature=temperature,
     )
-from pathlib import Path
-
-
-def get_db_path() -> Path:
-    env_path = os.getenv("AHURA_DB_PATH")
-    if env_path:
-        return Path(env_path).expanduser()
-
-    appdata = os.getenv("APPDATA")
-    if appdata:
-        return Path(appdata) / "Ahura" / "ahura.db"
-
-    return Path.home() / ".ahura" / "ahura.db"
