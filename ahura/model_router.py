@@ -4,6 +4,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
+from .response_types import AssistantResult
 from .openrouter_client import (
     OpenRouterClient,
     OpenRouterCreditError,
@@ -22,15 +23,6 @@ class ModelProfile:
 
     def chain(self) -> List[str]:
         return [self.primary] + self.fallbacks
-
-
-@dataclass
-class RoutedResponse:
-    """Wrapper for router results."""
-    profile_name: str
-    model_used: str
-    response: Dict[str, Any]
-    key_limits_snapshot: Optional[KeyLimits]
 
 
 class AhuraModelRouter:
@@ -73,7 +65,7 @@ class AhuraModelRouter:
         plugins: Optional[List[str]] = None,
         response_format: Optional[Dict[str, Any]] = None,
         extra_params: Optional[Dict[str, Any]] = None,
-    ) -> RoutedResponse:
+    ) -> AssistantResult:
         profile = self.get_profile(profile_name)
 
         key_limits_snapshot: Optional[KeyLimits] = None
@@ -94,10 +86,11 @@ class AhuraModelRouter:
             ] or candidate_chain
 
         last_error: Optional[Exception] = None
+        last_result: AssistantResult | None = None
 
         for model_id in candidate_chain:
             try:
-                response = self.client.chat_completion(
+                result = self.client.chat_completion(
                     model=model_id,
                     messages=messages,
                     stream=False,
@@ -106,21 +99,13 @@ class AhuraModelRouter:
                     extra_params=extra_params,
                 )
 
-                choices = response.get("choices") or []
-                if choices:
-                    finish_reason = choices[0].get("finish_reason")
-                    if finish_reason == "error":
-                        last_error = OpenRouterError(
-                            f"Model {model_id} returned finish_reason=error"
-                        )
-                        continue
-
-                return RoutedResponse(
-                    profile_name=profile.name,
-                    model_used=model_id,
-                    response=response,
-                    key_limits_snapshot=key_limits_snapshot,
-                )
+                if result.ok:
+                    result.model = model_id
+                    return result
+                result.model = model_id
+                last_result = result
+                last_error = OpenRouterError(result.message or "Provider response was invalid")
+                continue
 
             except OpenRouterCreditError as exc:
                 last_error = exc
@@ -137,21 +122,23 @@ class AhuraModelRouter:
                     initial_error=exc,
                 )
                 if success is not None:
-                    return RoutedResponse(
-                        profile_name=profile.name,
-                        model_used=model_id,
-                        response=success,
-                        key_limits_snapshot=key_limits_snapshot,
-                    )
+                    success.model = model_id
+                    return success
                 continue
 
             except OpenRouterError as exc:
                 last_error = exc
                 continue
 
-        raise RuntimeError(
-            f"All models in profile '{profile.name}' failed"
-        ) from last_error
+        if last_result is not None:
+            return last_result
+        return AssistantResult(
+            ok=False,
+            text="",
+            error_type="routing_error",
+            message=f"All models in profile '{profile.name}' failed: {last_error}",
+            raw=last_error,
+        )
 
     def _retry_same_model(
         self,
@@ -162,7 +149,7 @@ class AhuraModelRouter:
         response_format: Optional[Dict[str, Any]] = None,
         extra_params: Optional[Dict[str, Any]] = None,
         initial_error: OpenRouterRateLimitError,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Optional[AssistantResult]:
         backoff = self.rate_limit_backoff_seconds
         if initial_error.retry_after and initial_error.retry_after > backoff:
             backoff = initial_error.retry_after
@@ -172,7 +159,7 @@ class AhuraModelRouter:
             backoff *= 2.0
 
             try:
-                return self.client.chat_completion(
+                result = self.client.chat_completion(
                     model=model_id,
                     messages=messages,
                     stream=False,
@@ -180,6 +167,7 @@ class AhuraModelRouter:
                     response_format=response_format,
                     extra_params=extra_params,
                 )
+                return result if result.ok else None
             except OpenRouterRateLimitError:
                 continue
             except OpenRouterError:

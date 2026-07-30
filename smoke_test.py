@@ -40,7 +40,11 @@ def run_smoke_test():
         messages = [{"role": "user", "content": "Hello, ForgeOS!"}]
         result = router.route_chat(messages, profile_name="default")
         print(f"    [OK] Model used: {result.model_used}")
-        print(f"    [OK] Response: {result.response['choices'][0]['message']['content'][:50]}...")
+        if result.ok:
+            print(f"    [OK] Response: {result.text[:50]}...")
+        else:
+            print(f"    [FAIL] {result.error_type}: {result.message}")
+            return 1
     except Exception as e:
         print(f"    [!] Chat Test Failed: {e}")
         return

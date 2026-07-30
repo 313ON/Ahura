@@ -7,6 +7,9 @@ import urllib.parse
 import urllib.request
 import urllib.error
 
+from ahura.response_normalizer import ResponseNormalizer
+from ahura.response_types import AssistantResult
+
 
 class OpenRouterError(Exception):
     """Base exception for OpenRouter client errors."""
@@ -55,8 +58,8 @@ class KeyLimits:
     is_free_tier: bool
 
     @classmethod
-    def from_api(cls, payload: Dict[str, Any]) -> "KeyLimits":
-        data = payload.get("data") or {}
+    def from_api(cls, payload: object) -> "KeyLimits":
+        data = ResponseNormalizer.nested_object(payload, "data")
         return cls(
             label=data.get("label", ""),
             limit=data.get("limit"),
@@ -93,9 +96,10 @@ class ModelInfo:
     output_modalities: List[str]
 
     @classmethod
-    def from_api(cls, payload: Dict[str, Any]) -> "ModelInfo":
-        data = payload.get("data") or payload
-        arch = data.get("architecture") or {}
+    def from_api(cls, payload: object) -> "ModelInfo":
+        root = ResponseNormalizer.object_or_empty(payload)
+        data = ResponseNormalizer.nested_object(root, "data") or root
+        arch = ResponseNormalizer.nested_object(data, "architecture")
         return cls(
             id=data.get("id"),
             canonical_slug=data.get("canonical_slug", data.get("id")),
@@ -212,20 +216,14 @@ class OpenRouterClient:
 
         if response.status_code == 402:
             raw = self._safe_json(response)
-            msg = (
-                (raw.get("error") or {}).get("message")
-                if isinstance(raw, dict)
-                else "Credit / payment required"
-            )
+            error = raw.get("error") if isinstance(raw, dict) else raw
+            msg = ResponseNormalizer.error_message(error, "Credit / payment required")
             raise OpenRouterCreditError(msg)
 
         if response.status_code >= 400:
             raw = self._safe_json(response)
-            msg = (
-                (raw.get("error") or {}).get("message")
-                if isinstance(raw, dict)
-                else response.text
-            )
+            error = raw.get("error") if isinstance(raw, dict) else raw
+            msg = ResponseNormalizer.error_message(error, response.text)
             raise OpenRouterError(f"HTTP {response.status_code}: {msg}")
 
         return response
@@ -290,7 +288,7 @@ class OpenRouterClient:
         plugins: Optional[List[str]] = None,
         response_format: Optional[Dict[str, Any]] = None,
         extra_params: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+    ) -> AssistantResult:
         body: Dict[str, Any] = {
             "messages": messages,
             "stream": stream,
@@ -306,4 +304,4 @@ class OpenRouterClient:
             body.update(extra_params)
 
         resp = self._request("POST", "/chat/completions", json_body=body)
-        return resp.json()
+        return ResponseNormalizer.normalize(resp.json(), model=model)

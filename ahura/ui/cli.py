@@ -19,6 +19,8 @@ from ahura.chat.session_paths import (
 from ahura.model_router import AhuraModelRouter
 from ahura.openrouter_client import OpenRouterClient
 from ahura.router_config import load_profiles_from_file
+from ahura.response_types import AssistantResult
+from ahura.ui_render import AhuraRenderer
 
 
 def build_session_id() -> str:
@@ -90,12 +92,19 @@ def collect_user_input() -> str:
 
 
 def run_chat_loop(session_mode: str) -> None:
-    print("[+] Ahura CLI initialized. Loading router...")
+    renderer = AhuraRenderer()
+    renderer.welcome()
 
     api_key = os.environ.get("OPENROUTER_API_KEY")
     if not api_key:
-        print("[-] ERROR: OPENROUTER_API_KEY not found in environment variables.")
-        print('    PowerShell example: $env:OPENROUTER_API_KEY="your_key_here"')
+        renderer.error(
+            AssistantResult(
+                ok=False,
+                text="",
+                error_type="configuration_error",
+                message="OPENROUTER_API_KEY is not set.",
+            )
+        )
         sys.exit(1)
 
     ensure_ahura_dirs()
@@ -109,10 +118,12 @@ def run_chat_loop(session_mode: str) -> None:
 
     init_session(session_manager, session_mode)
 
-    print(f"[+] Session active: {session_manager.current_session_id}")
-    print("[+] Ahura is ready. Type /help for commands.")
-    print("[+] Autosave enabled (JSONL persistence).")
-    print("[+] Type /exit to quit.")
+    profile = router.get_profile("default")
+    session_path = session_manager.sessions_dir / (
+        f"session_{session_manager.current_session_id}.jsonl"
+    )
+    renderer.status(model=profile.primary, session_path=session_path)
+    renderer.info("Ready · /help for commands · autosave enabled")
 
     while True:
         try:
@@ -122,6 +133,12 @@ def run_chat_loop(session_mode: str) -> None:
 
             if is_command(user_input):
                 command, args = parse_command(user_input)
+                if command == "/help":
+                    renderer.help()
+                    continue
+                if command == "/clear":
+                    renderer.clear()
+                    continue
                 command_result = handle_command(
                     command,
                     args,
@@ -130,7 +147,7 @@ def run_chat_loop(session_mode: str) -> None:
                     on_doctor=lambda: build_doctor_report(session_manager),
                 )
                 if command_result.message:
-                    print(command_result.message)
+                    renderer.command(command_result.message)
 
                 if command_result.enter_multiline:
                     user_input = read_block_input()
@@ -148,22 +165,27 @@ def run_chat_loop(session_mode: str) -> None:
             profile_name = "default"
             result = router.route_chat(router_messages, profile_name=profile_name)
 
-            assistant_content = result.response["choices"][0]["message"]["content"]
-            model_used = getattr(result, "model_used", "unknown")
-
-            session_manager.add_assistant_message(assistant_content, model=model_used)
-
-            print(f"\n[Model: {model_used}]")
-            print(assistant_content)
+            if result.ok:
+                session_manager.add_assistant_message(result.text, model=result.model)
+                renderer.assistant(result)
+            else:
+                renderer.error(result)
 
         except KeyboardInterrupt:
-            print("\n[!] Interrupted.")
+            renderer.info("Interrupted")
             break
         except EOFError:
-            print("\n[!] EOF received. Exiting.")
+            renderer.info("EOF received · exiting")
             break
         except Exception as e:
-            print(f"[!] Error: {e}")
+            renderer.error(
+                AssistantResult(
+                    ok=False,
+                    text="",
+                    error_type="runtime_error",
+                    message=str(e),
+                )
+            )
 
 
 def main(argv: list[str] | None = None) -> None:
