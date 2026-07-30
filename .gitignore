@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.vscode/
+*.log
+# اگر نمی‌خواهی تنظیمات روتینگت فعلاً عمومی شود:
+# ahura_router.json
