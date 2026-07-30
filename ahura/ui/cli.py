@@ -9,8 +9,8 @@ from ahura.commands.inspect_cmd import run_inspect
 
 
 def run_chat(args: argparse.Namespace) -> int:
-    from ahura.ui.chat import run_chat_mode
-    return run_chat_mode()
+    from ahura.ui.chat import run_chat
+    return run_chat()
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -46,3 +46,5 @@ def main(argv: Optional[list[str]] = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
