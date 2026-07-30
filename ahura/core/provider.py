@@ -26,11 +26,15 @@ class OpenRouterClient:
         api_key: str,
         model: str,
         timeout_seconds: float = 60.0,
+        max_tokens: int = 1024,
+        temperature: float = 0.2,
         base_url: str = "https://openrouter.ai/api/v1/chat/completions",
     ) -> None:
         self.api_key = api_key
         self.model = model
         self.timeout_seconds = timeout_seconds
+        self.max_tokens = max_tokens
+        self.temperature = temperature
         self.base_url = base_url
 
     def chat(self, messages: list[ChatMessage]) -> str:
@@ -41,6 +45,8 @@ class OpenRouterClient:
                 {"role": message.role, "content": message.content}
                 for message in messages
             ],
+            "max_tokens": self.max_tokens,
+            "temperature": self.temperature,
         }
 
         body = json.dumps(payload).encode("utf-8")
