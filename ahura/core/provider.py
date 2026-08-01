@@ -10,6 +10,9 @@ from typing import Any
 class ProviderError(RuntimeError):
     """Raised when the upstream provider request fails."""
 
+class ProviderConnectionError(ProviderError):
+    """Raised when the provider cannot be reached."""
+
 
 @dataclass(slots=True)
 class ChatMessage:
@@ -75,7 +78,7 @@ class OpenRouterClient:
                 f"OpenRouter HTTP {exc.code}: {error_body}"
             ) from exc
         except urllib.error.URLError as exc:
-            raise ProviderError(f"Network error: {exc.reason}") from exc
+            raise ProviderConnectionError(f"Network error: {exc.reason}") from exc
         except Exception as exc:
             raise ProviderError(f"Unexpected provider error: {exc}") from exc
 
